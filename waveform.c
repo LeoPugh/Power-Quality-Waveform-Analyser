@@ -41,6 +41,11 @@ double calc_rms(struct WaveformSample *array, int size) {
     }
 
     double mean = sum / size;
+    
+    if (mean < (desired_value*0.9) || mean > (desired_value*1.1)) {
+        printf("Mean is compliant.");
+    }
+
     return sqrt(mean);
 }
 
