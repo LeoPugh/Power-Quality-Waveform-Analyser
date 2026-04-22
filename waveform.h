@@ -16,4 +16,10 @@ struct WaveformSample {
     // Using double as it has a higher length limit and can include decimal values
 };
 
+double calc_rms(struct WaveformSample *array, int size);
+
+double peak2peak(struct WaveformSample *array, int size);
+
+
+
 #endif //POWER_QUALITY_WAVEFORM_ANALYSER_WAVEFORM_H
