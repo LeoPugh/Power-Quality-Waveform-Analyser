@@ -43,6 +43,14 @@ struct WaveformSample *read_log(char *filename, int *rows) {
 
     fgets(line, sizeof(line), filepointer);
 
+    if (strcmp(line, "timestamp,phase_A_voltage,phase_B_voltage,phase_C_voltage,line_current,frequency,power_factor,thd_percent\n") != 0) {
+        // ^if the first line is not what we expect^
+        printf("Error: %s does not have the correct headers.\n", filename);
+        fclose(filepointer); // close file and free the array early
+        free(array);
+        return NULL;
+    }
+
     while (fgets(line, sizeof(line), filepointer) != NULL) { //Goes until end of file
 
         char *token;
