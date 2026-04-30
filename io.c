@@ -1,16 +1,16 @@
 
-
+#include <dirent.h>
 #include "io.h"
+#include "waveform.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 
-
 int count_rows(char *filename) {
     FILE *filepointer = fopen(filename, "r");
     if (filepointer == NULL) { //Making sure file can be read
-        printf("Cannot open file.");
-        return 1;
+        printf("ERROR: Cannot open file.");
+        return -1;
     }
 
     int count = 0;
@@ -26,15 +26,14 @@ int count_rows(char *filename) {
     return count;
 }
 
-
 struct WaveformSample *read_log(char *filename, int *rows) {
-    *rows = count_rows(filename);
+    *rows = count_rows(filename); // change value of the rows/size variable using pointers
 
     struct WaveformSample *array = malloc(*rows * sizeof(struct WaveformSample)); //Malloc for memory allocation
 
     FILE *filepointer = fopen(filename, "r");
     if (filepointer == NULL) { //Making sure file can be read
-        printf("Cannot open file.");
+        printf("ERROR: Cannot open file.");
         return NULL;
     }
 
@@ -45,7 +44,7 @@ struct WaveformSample *read_log(char *filename, int *rows) {
 
     if (strcmp(line, "timestamp,phase_A_voltage,phase_B_voltage,phase_C_voltage,line_current,frequency,power_factor,thd_percent\n") != 0) {
         // ^if the first line is not what we expect^
-        printf("Error: %s does not have the correct headers.\n", filename);
+        printf("ERROR: %s does not have the correct headers.\n", filename);
         fclose(filepointer); // close file and free the array early
         free(array);
         return NULL;
@@ -87,24 +86,46 @@ struct WaveformSample *read_log(char *filename, int *rows) {
 }
 
 void write_results(char *filename, struct WaveformSample *array, int size) {
-    double rms = calc_rms(array, size);
-    double p2p = peak2peak(array, size);
-    double offset = DC_offset(array, size);
-    int clip_count = clip_check(array, size);
+    // RMS values
+    double a_rms = calc_rms(array, size, 'A');
+    double b_rms = calc_rms(array, size, 'B');
+    double c_rms = calc_rms(array, size, 'C');
+    // peak to peak values
+    double a_p2p = peak2peak(array, size, 'A');
+    double b_p2p = peak2peak(array, size, 'B');
+    double c_p2p = peak2peak(array, size, 'C');
+    // dc offset
+    double a_offset = DC_offset(array, size, 'A');
+    double b_offset = DC_offset(array, size, 'B');
+    double c_offset = DC_offset(array, size, 'C');
+    // compliance with threshold
     int A_compliance = compliance_check(array, size, 'A');
     int B_compliance = compliance_check(array, size, 'B');
     int C_compliance = compliance_check(array, size, 'C');
+    // std deviation and variance
+    double a_variance = calc_variance(array, size, 'A');
+    double b_variance = calc_variance(array, size, 'B');
+    double c_variance = calc_variance(array, size, 'C');
+    double a_std_dev = calc_std_dev(array, size, 'A');
+    double b_std_dev = calc_std_dev(array, size, 'B');
+    double c_std_dev = calc_std_dev(array, size, 'C');
+    int clip_count = clip_check(array, size);
 
     FILE *filepointer = fopen(filename, "w");
     if (filepointer == NULL) { //Making sure file can be read
-        printf("Cannot open file.");
+        printf("ERROR: Cannot open file.");
         return;
     }
-    fprintf(filepointer, "Root-mean-square: %lf\n"
+
+    fprintf(filepointer, "\nPhase A:\n"
+                         "Root-mean-square: %lf\n"
                          "Peak to peak: %lf\n"
                          "DC offset: %lf\n"
-                         "Times clipped: %d\n",
-                         rms,p2p,offset,clip_count);
+                         "Variance: %lf\n"
+                         "Standard deviation: %lf\n",
+                         a_rms,a_p2p,a_offset, a_variance, a_std_dev);
+
+    // writing whether compliant
     switch (A_compliance) {
         case 1:
             fprintf(filepointer, "Phase A is compliant.\n");
@@ -113,6 +134,14 @@ void write_results(char *filename, struct WaveformSample *array, int size) {
             fprintf(filepointer, "Phase A is not compliant.\n");
             break;
     }
+
+    fprintf(filepointer, "\nPhase B:\n"
+                         "Root-mean-square: %lf\n"
+                         "Peak to peak: %lf\n"
+                         "DC offset: %lf\n"
+                         "Variance: %lf\n"
+                         "Standard deviation: %lf\n",
+                         b_rms,b_p2p,b_offset, b_variance, b_std_dev);
 
     switch (B_compliance) {
         case 1:
@@ -123,6 +152,14 @@ void write_results(char *filename, struct WaveformSample *array, int size) {
             break;
     }
 
+    fprintf(filepointer, "\nPhase C:\n"
+                         "Root-mean-square: %lf\n"
+                         "Peak to peak: %lf\n"
+                         "DC offset: %lf\n"
+                         "Variance: %lf\n"
+                         "Standard deviation: %lf\n",
+                         c_rms,c_p2p,c_offset, c_variance, c_std_dev);
+
     switch (C_compliance) {
         case 1:
             fprintf(filepointer, "Phase C is compliant.\n");
@@ -132,19 +169,17 @@ void write_results(char *filename, struct WaveformSample *array, int size) {
             break;
     }
 
-    fprintf(filepointer, "Phase A variance: %lf\n", calc_variance(array, size, 'A'));
-    fprintf(filepointer, "Phase A standard deviation: %lf\n", calc_std_dev(array, size, 'A'));
-    fprintf(filepointer, "Phase B variance: %lf\n", calc_variance(array, size, 'B'));
-    fprintf(filepointer, "Phase B standard deviation: %lf\n", calc_std_dev(array, size, 'B'));
-    fprintf(filepointer, "Phase C variance: %lf\n", calc_variance(array, size, 'C'));
-    fprintf(filepointer, "Phase C standard deviation: %lf\n", calc_std_dev(array, size, 'C'));
+    fprintf(filepointer, "\nTimes clipped: %d", clip_count);
     fclose(filepointer);
 }
 
-void process_directory() {
+void process_directory(int mode) {
     int rows;
     char path[256];
     int csv_count = 0;
+    uint8_t A_status;
+    uint8_t B_status;
+    uint8_t C_status;
 
     printf("Please enter the directory path: ");
     scanf(" %255[^\n]", path); // has max character limit of 255 (excluding the null terminator)
@@ -152,7 +187,7 @@ void process_directory() {
 
     DIR *dir = opendir(path);
     if (dir == NULL) {
-        printf("Could not open directory\n");
+        printf("ERROR: Could not open directory\n");
         return;
     }
 
@@ -160,21 +195,76 @@ void process_directory() {
     while ((entry = readdir(dir)) != NULL) { // ends when checked through all files in directory
         if (strstr(entry->d_name, ".csv") != NULL) { // if there is a substring of .csv in the name of the file:
             csv_count++;
-            char filepath[512];
-            char results_file[512];
+            char filepath[256];
+            char results_file[256];
 
             sprintf(filepath, "%s\\%s", path, entry->d_name); // append the file name onto the end of the directory provided by the user
             sprintf(results_file, "%s\\results%d.txt", path, csv_count); // append/create the results file
 
-            printf("Processing CSV: %s\n", filepath);
-
             struct WaveformSample *samples = read_log(filepath, &rows);
-            if (samples == NULL) { // if there are no samples, for safety
-                printf("Could not read %s\n", filepath);
-                continue;
+
+            switch (mode) {
+                case 1:
+                    sprintf(results_file, "%s\\results%d.txt", path, csv_count); // append/create the results file
+
+                    if (samples == NULL) { // if there are no samples, for safety
+                        printf("ERROR: Could not read %s\n", filepath);
+                        continue;
+                    }
+
+                    printf("Processing CSV: %s\n", filepath);
+
+                    write_results(results_file, samples, rows);
+                    break;
+                case 2:
+                    if (samples == NULL) {
+                        printf("ERROR: Could not read %s\n", filepath);
+                        continue;
+                    }
+
+                    printf("Sorting CSV: %s\n", filepath);
+
+                    cocktail_sort(samples, rows, filepath);
+                    break;
+                case 3:
+                    if (samples == NULL) {
+                        printf("ERROR: Could not read %s\n", filepath);
+                        continue;
+                    }
+
+                    printf("Checking health of CSV: %s\n", filepath);
+
+                    set_status(samples, rows, &A_status, &B_status, &C_status);
+                    write_status(filepath, samples, rows);
+                    break;
+                case 4:
+                    // read/write section
+                    sprintf(results_file, "%s\\results%d.txt", path, csv_count); // append/create the results file
+
+                    if (samples == NULL) {
+                        printf("ERROR: Could not read %s\n", filepath);
+                        continue;
+                    }
+
+                    printf("Processing CSV: %s\n", filepath);
+
+                    write_results(results_file, samples, rows);
+
+                    // sorting section
+                    printf("Sorting CSV: %s\n", filepath);
+
+                    cocktail_sort(samples, rows, filepath);
+
+                    // health check section
+                    printf("Checking health of CSV: %s\n\n", filepath);
+
+                    set_status(samples, rows, &A_status, &B_status, &C_status);
+                    write_status(filepath, samples, rows);
+                    break;
+                default:
+                    break;
             }
 
-            write_results(results_file, samples, rows);
             free(samples);
         }
     }
