@@ -2,6 +2,7 @@
 
 #include "user_input.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include "io.h"
 
 void ask_user() {
@@ -63,4 +64,6 @@ void ask_user() {
                 printf("Invalid input, try again.\n");
         }
     } while (user_input != '9');
+
+    free(samples);
 }
